@@ -367,6 +367,7 @@ int uv_spawn(uv_loop_t* loop,
   int err;
   int exec_errorno;
   int i;
+  int status;
 
   assert(options->file != NULL);
   assert(!(options->flags & ~(UV_PROCESS_DETACHED |
@@ -451,14 +452,24 @@ int uv_spawn(uv_loop_t* loop,
     r = read(signal_pipe[0], &exec_errorno, sizeof(exec_errorno));
   while (r == -1 && errno == EINTR);
 
+#define _UV_WAIT() \
+    do \
+      err = waitpid(pid, &status, 0); /* okay, read errorno */ \
+    while (err == -1 && errno == EINTR); \
+    assert(err == pid);
+
   if (r == 0)
     ; /* okay, EOF */
-  else if (r == sizeof(exec_errorno))
-    ; /* okay, read errorno */
-  else if (r == -1 && errno == EPIPE)
-    ; /* okay, got EPIPE */
+  else if (r == sizeof(exec_errorno)) {
+    _UV_WAIT();
+  }
+  else if (r == -1 && errno == EPIPE) {
+    _UV_WAIT();
+  }
   else
     abort();
+
+#undef _UV_WAIT
 
   uv__close(signal_pipe[0]);
 
